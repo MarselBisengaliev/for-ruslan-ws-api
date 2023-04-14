@@ -39,7 +39,13 @@ class GameVersionController extends Controller
         $zipName = Str::replace('.zip', '', $zipfile->getClientOriginalName());
 
         try {
-            $game = Game::query()->where('slug', $slug)->firstOrFail();
+            $game = Game::query()->with(['deletedGame'])->where('slug', $slug)->firstOrFail();
+            if ($game->deletedGame) {
+                return response()->json([
+                    'status' => 'not-found',
+                    'message' => 'Not found'
+                ], 404);
+            }
             if (+$game->user_id !== +$request->user()->id) {
                 return response()->json([
                     'status' => 'forbidden',
@@ -83,7 +89,14 @@ class GameVersionController extends Controller
      */
     public function show(string $slug, int $version)
     {
-        $game = Game::query()->where('slug', $slug)->firstOrFail();
+        $game = Game::query()->with(['deletedGame'])->where('slug', $slug)->firstOrFail();
+        if ($game->deletedGame) {
+            return response()->json([
+                'status' => 'not-found',
+                'message' => 'Not found'
+            ], 404);
+        }
+
         $path = "games/$game->slug/$version/index.html";
 
         if (!Storage::exists($path)) {
@@ -92,7 +105,7 @@ class GameVersionController extends Controller
                 'message' => 'Not found'
             ], 404);
         }
-        
+
         return response()->json("/storage/$path", 200);
     }
 

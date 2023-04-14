@@ -42,4 +42,8 @@ class User extends Authenticatable
     public function uploadedGames() {
         return $this->hasMany(Game::class);
     }
+
+    public function blocked() {
+        return $this->hasOne(BlockedUser::class);
+    }
 }

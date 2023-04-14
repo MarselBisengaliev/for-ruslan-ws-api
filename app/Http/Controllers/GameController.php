@@ -20,7 +20,7 @@ class GameController extends Controller
     {
         $page = $request->query('page', 0);
         $size = $request->query('size', 10);
-        $sortBy = $request->query('sort', 'title');
+        $sortBy = $request->query('sortBy', 'title');
         $sortDir = $request->query('sortDir', 'asc');
 
         $sortByFields = ['title', 'popular', 'uploaddate'];
@@ -33,26 +33,39 @@ class GameController extends Controller
             $sortDir = 'asc';
         }
 
-        $games = Game::query()->whereHas('gameVersions')->skip(ceil($page * $size))->take($size);
+        $games = Game::query()
+            ->whereHas('gameVersions')
+            ->withCount(['scoreCount'])
+            ->skip(ceil($page * $size))
+            ->take($size);
+
 
         if ($sortBy === 'title') {
             $games->orderBy('title', $sortDir);
         }
 
-        if ($sortBy === 'popular') {
-            $games
-                ->join('game_versions', 'games.id', '=', 'game_versions.game_id')
-                ->join('game_scores', 'game_versions.id', '=', 'game_scores.game_version_id')
-                ->orderBy('game_scores.count', $sortDir);
-        }
-
         if ($sortBy === 'uploaddate') {
             $games
+                ->select('games.*')
                 ->join('game_versions', 'games.id', '=', 'game_versions.game_id')
                 ->orderBy('game_versions.created_at', $sortDir);
         }
 
-        $games = $games->get();
+        $games = $games->distinct()->get();
+
+        if ($sortBy === 'popular') {
+            if ($sortDir === 'asc') {
+                $games = $games->sortBy(function ($game) {
+                    return $game->scoreCount->count();
+                });
+            }
+            if ($sortDir === 'desc') {
+                $games = $games->sortBy(function ($game) {
+                    return !$game->scoreCount->count();
+                });
+            }
+        }
+
         $content = [];
         foreach ($games as $game) {
             $gameVersion = GameVersion::query()
@@ -60,9 +73,7 @@ class GameController extends Controller
                 ->orderBy('created_at', 'desc')
                 ->first();
 
-            if ($gameVersion) {
-                $scoreCount = GameScore::query()->where('game_version_id', $gameVersion->id)->count();
-
+            if (!$game->auhtor->blocked && $gameVersion) {
                 $content[] = [
                     'slug' => $game->slug,
                     'title' => $game->title,
@@ -70,7 +81,7 @@ class GameController extends Controller
                     'thumbnail' => $game->optional_thumbnail,
                     'uploadTimestamp' => $gameVersion->created_at,
                     'author' => $game->author->username,
-                    'scoreCount' => $scoreCount
+                    'scoreCount' => $game->scoreCount->count()
                 ];
             }
         }
@@ -82,7 +93,7 @@ class GameController extends Controller
             'content' => $content
         ];
 
-        return response()->json($response, 400);
+        return response()->json($response, 200);
     }
 
     /**
@@ -122,22 +133,40 @@ class GameController extends Controller
     public function show(string $slug)
     {
         try {
-            $game = Game::query()->with(['author'])->where('slug', $slug)->firstOrFail();
+            $game = Game::query()->with(['author', 'deletedGame'])->where('slug', $slug)->firstOrFail();
+
+            if ($game->deletedGame) {
+                return response()->json([
+                    'status' => 'not-found',
+                    'message' => 'Not found'
+                ], 404);
+            }
+
+            if ($game->author->blocked) {
+                return response()->json([
+                    'status' => 'not-found',
+                    'message' => 'Not found'
+                ], 404);
+            }
+
             $lastGameVersion = GameVersion::query()
                 ->where('game_id', $game->id)
                 ->orderBy('created_at', 'desc')
-                ->firstOrFail();
-            $scoreCount = GameScore::query()->where('game_version_id', $lastGameVersion->id)->count();
+                ->first();
+
+            $scoreCount = $lastGameVersion ? GameScore::query()
+                ->where('game_version_id', $lastGameVersion->id)
+                ->count() : 0;
 
             return response()->json([
                 'slug' => $game->slug,
                 'title' => $game->title,
                 'description' => $game->description,
                 'thumbnail' => $game->optional_thumbnail,
-                'uploadTimestamp' => $lastGameVersion->created_at,
+                'uploadTimestamp' => $lastGameVersion ? $lastGameVersion->created_at : null,
                 'author' => $game->author->username,
                 'scoreCount' => $scoreCount,
-                'gamePath' => $lastGameVersion->path_to_game_files
+                'gamePath' => $lastGameVersion ? $lastGameVersion->path_to_game_files : null
             ], 200);
         } catch (ModelNotFoundException $e) {
             return response()->json([

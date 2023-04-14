@@ -32,4 +32,12 @@ class Game extends Model
     public function gameVersions() {
         return $this->hasMany(GameVersion::class);
     }
+
+    public function scoreCount() {
+        return $this->hasManyThrough(GameScore::class, GameVersion::class);
+    }
+
+    public function deletedGame() {
+        return $this->hasOne(DeletedGame::class);
+    }
 }

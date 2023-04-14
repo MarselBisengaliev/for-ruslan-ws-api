@@ -17,8 +17,16 @@ class GameScoreController extends Controller
     public function index(string $slug)
     {
         try {
-            $game = Game::query()->where('slug', $slug) 
-                ->firstOrFail(); 
+            $game = Game::query()->where('slug', $slug)
+                ->with('deletedGame')
+                ->firstOrFail();
+
+            if ($game->deletedGame) {
+                return response()->json([
+                    'status' => 'not-found',
+                    'message' => 'Not found'
+                ], 404);
+            }
 
             $lastGameVersion = GameVersion::query()
                 ->orderBy('created_at', 'desc')
@@ -29,14 +37,16 @@ class GameScoreController extends Controller
                 ->where('game_version_id', $lastGameVersion->id)
                 ->orderBy('score', 'desc')
                 ->get();
-            
+
             $parsedScores = [];
             foreach ($scores as $score) {
-                $parsedScores[] = [
-                    'username' => $score->user->username,
-                    'score' => $score->score,
-                    'timestamp' => $score->created_at,
-                ];
+                if (!$score->user->blocked) {
+                    $parsedScores[] = [
+                        'username' => $score->user->username,
+                        'score' => $score->score,
+                        'timestamp' => $score->created_at,
+                    ];
+                }
             }
 
             return response()->json([
@@ -64,7 +74,17 @@ class GameScoreController extends Controller
     public function store(StoreGameScoreRequest $request, string $slug)
     {
         try {
-            $game = Game::query()->where('slug', $slug)->firstOrFail();
+            $game = Game::query()->where('slug', $slug)
+                ->with('deletedGame')
+                ->firstOrFail();
+
+            if ($game->deletedGame) {
+                return response()->json([
+                    'status' => 'not-found',
+                    'message' => 'Not found'
+                ], 404);
+            }
+
             $lastGameVersion = GameVersion::query()
                 ->where('game_id', $game->id)
                 ->orderBy('created_at', 'desc')

@@ -32,7 +32,7 @@ Route::prefix('v1')->group(function() {
     Route::get('/users/{username}', [UserController::class, 'show']);
     Route::get('/games/{slug}/scores', [GameScoreController::class, 'index']);
 
-    Route::middleware('auth:sanctum')->group(function() {
+    Route::middleware(['auth:sanctum', 'not-blocked'])->group(function() {
         Route::post('/auth/signout', [AuthController::class, 'signout']);
         Route::post('/games', [GameController::class, 'store']);
         Route::post('/games/{slug}/upload', [GameVersionController::class, 'store']);
